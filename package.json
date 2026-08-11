@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc -p tsconfig.build.json",
-    "verify:buffer": "tsx scripts/verify-buffer-schema.ts"
+    "verify:buffer": "tsx scripts/verify-buffer-schema.ts",
+    "dump:buffer": "tsx scripts/dump-buffer-schema.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
