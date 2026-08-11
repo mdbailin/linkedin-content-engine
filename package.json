@@ -9,22 +9,24 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.build.json",
+    "verify:buffer": "tsx scripts/verify-buffer-schema.ts"
   },
   "dependencies": {
-    "cloudinary": "latest",
-    "dotenv": "latest",
-    "openai": "latest",
-    "pdf-lib": "latest",
-    "zod": "latest"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "cloudinary": "^2.10.0",
+    "dotenv": "^17.4.2",
+    "openai": "^7.4.0",
+    "pdf-lib": "^1.17.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "tsx": "latest",
-    "typescript": "latest",
-    "vitest": "latest"
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
-  "comments": {
-    "mcp": "Claude must add the current stable official MCP TypeScript server package during Phase 4 after checking the official docs. Do not guess a frozen package/version here."
+  "engines": {
+    "node": ">=20"
   }
 }
