@@ -42,6 +42,8 @@ const TYPE_QUERY = /* GraphQL */ `
       inputFields { name description type { ${TYPE_REF} } }
       enumValues { name description }
       fields { name type { ${TYPE_REF} } }
+      possibleTypes { name kind }
+      interfaces { name }
     }
   }
 `;
@@ -62,7 +64,7 @@ if (config.DRY_RUN) {
   process.exit(2);
 }
 const transport = createBufferTransport(config);
-const requested = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
+const requested: string[] = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
 
 if (requested.length === 0) {
   const schema = (await transport(ROOT_QUERY)).data as {
@@ -83,7 +85,8 @@ if (requested.length === 0) {
   }
   console.log('\nRe-run with type names to expand, e.g. npm run dump:buffer -- ShareMode AssetInput\n');
 } else {
-  for (const name of requested) {
+  for (let cursor = 0; cursor < requested.length; cursor++) {
+    const name = requested[cursor]!;
     const result = (await transport(TYPE_QUERY, { name })).data as {
       __type: {
         name: string;
@@ -92,6 +95,8 @@ if (requested.length === 0) {
         inputFields: Array<{ name: string; description: string | null; type: TypeRef }> | null;
         enumValues: Array<{ name: string; description: string | null }> | null;
         fields: Array<{ name: string; type: TypeRef }> | null;
+        possibleTypes: Array<{ name: string; kind: string }> | null;
+        interfaces: Array<{ name: string }> | null;
       } | null;
     };
     const type = result.__type;
@@ -108,6 +113,11 @@ if (requested.length === 0) {
     }
     for (const field of type.fields ?? []) {
       console.log(`  ${field.name}: ${renderType(field.type)}`);
+    }
+    for (const member of type.possibleTypes ?? []) {
+      console.log(`  | ${member.name} (${member.kind})`);
+      // A union is useless without its members' fields — expand them inline.
+      if (!requested.includes(member.name)) requested.push(member.name);
     }
   }
   console.log('');
