@@ -1,5 +1,14 @@
 {
   "name": "linkedin-content-engine",
   "version": "0.1.0",
-  "description": "Create, review, store, and schedule LinkedIn content with Claude, GPT Image 2, Cloudinary, and Buffer."
+  "description": "Create, review, store, and schedule LinkedIn content with Claude, GPT Image 2, Cloudinary, and Buffer.",
+  "author": {
+    "name": "Matthew Bailin"
+  },
+  "mcpServers": {
+    "linkedin-content-engine": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js"]
+    }
+  }
 }
