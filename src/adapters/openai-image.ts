@@ -3,7 +3,7 @@ import path from 'node:path';
 import OpenAI, { toFile } from 'openai';
 import type { Uploadable } from 'openai';
 import { requireProviderCredentials, redactSecrets, type AppConfig } from '../config.js';
-import { createPlaceholderPng } from '../lib/placeholder-png.js';
+import { createPlaceholderPng, placeholderColour } from '../lib/placeholder-png.js';
 import { ProviderError } from '../types.js';
 
 /**
@@ -132,8 +132,15 @@ export async function generateCreative(
   if (config.DRY_RUN) {
     const files: string[] = [];
     for (let i = 0; i < count; i++) {
-      const file = path.join(input.outputDir, outputFilename(baseName, i));
-      await writeFile(file, createPlaceholderPng({ width, height }));
+      const filename = outputFilename(baseName, i);
+      const file = path.join(input.outputDir, filename);
+      // Distinct colour + stamped label per slide so a rendered dry-run deck
+      // can be checked for ORDER visually, not just page count.
+      const label = (filename.match(/^\d+/)?.[0] ?? String(i + 1)).padStart(2, '0');
+      await writeFile(
+        file,
+        createPlaceholderPng({ width, height, rgb: placeholderColour(filename), label })
+      );
       files.push(file);
     }
     return {

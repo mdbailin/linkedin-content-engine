@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { createPlaceholderPng } from '../src/lib/placeholder-png.js';
+import { createPlaceholderPng, placeholderColour } from '../src/lib/placeholder-png.js';
 import { buildCarouselPdf, slugifyTitle } from '../src/services/carousel.js';
 
 async function makeSlides(dir: string, widths: number[]): Promise<string[]> {
@@ -62,5 +62,14 @@ describe('buildCarouselPdf', () => {
   it('slugifyTitle is stable and safe', () => {
     expect(slugifyTitle('  Hello, World! ')).toBe('hello-world');
     expect(slugifyTitle('***')).toBe('carousel');
+  });
+});
+
+describe('placeholder labelling (dry-run legibility)', () => {
+  it('gives distinct colours per seed and stamps ink for a label', () => {
+    expect(placeholderColour('01-cover.png')).not.toEqual(placeholderColour('02-problem.png'));
+    const plain = createPlaceholderPng({ width: 200, height: 200 });
+    const labelled = createPlaceholderPng({ width: 200, height: 200, label: '03' });
+    expect(labelled.equals(plain)).toBe(false);
   });
 });
