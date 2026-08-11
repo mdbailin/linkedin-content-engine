@@ -1,73 +1,50 @@
 #!/usr/bin/env tsx
 /**
- * Read-only diagnostic: dump what Buffer's GraphQL schema actually offers, so
- * src/adapters/buffer-operations.ts can be corrected against fact rather than
- * assumption.
+ * Read-only Buffer schema diagnostic.
  *
- * Usage: DRY_RUN=false npm run dump:buffer
- * Sends one introspection query. Never writes.
+ *   DRY_RUN=false npm run dump:buffer                    # queries + mutations
+ *   DRY_RUN=false npm run dump:buffer -- ShareMode ...   # named types
+ *
+ * Handles INPUT_OBJECT (inputFields), ENUM (enumValues), OBJECT (fields).
+ * Sends introspection queries only. Never writes.
  */
 import { loadConfig } from '../src/config.js';
 import { createBufferTransport } from '../src/adapters/buffer.js';
-
-const DUMP_QUERY = /* GraphQL */ `
-  query LceSchemaDump {
-    __schema {
-      queryType {
-        fields {
-          name
-        }
-      }
-      mutationType {
-        fields {
-          name
-          args {
-            name
-            type {
-              kind
-              name
-              ofType {
-                kind
-                name
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-const INPUT_TYPE_QUERY = /* GraphQL */ `
-  query LceInputDump($name: String!) {
-    __type(name: $name) {
-      name
-      kind
-      inputFields {
-        name
-        description
-        type {
-          kind
-          name
-          ofType {
-            kind
-            name
-            ofType {
-              kind
-              name
-            }
-          }
-        }
-      }
-    }
-  }
-`;
 
 interface TypeRef {
   kind: string;
   name: string | null;
   ofType?: TypeRef | null;
 }
+
+// Four levels deep: covers [AssetInput!]! and similar nesting.
+const TYPE_REF = `
+  kind
+  name
+  ofType { kind name ofType { kind name ofType { kind name } } }
+`;
+
+const ROOT_QUERY = /* GraphQL */ `
+  query LceSchemaDump {
+    __schema {
+      queryType { fields { name args { name type { ${TYPE_REF} } } } }
+      mutationType { fields { name args { name type { ${TYPE_REF} } } } }
+    }
+  }
+`;
+
+const TYPE_QUERY = /* GraphQL */ `
+  query LceTypeDump($name: String!) {
+    __type(name: $name) {
+      name
+      kind
+      description
+      inputFields { name description type { ${TYPE_REF} } }
+      enumValues { name description }
+      fields { name type { ${TYPE_REF} } }
+    }
+  }
+`;
 
 function renderType(type: TypeRef | null | undefined): string {
   if (!type) return '?';
@@ -76,53 +53,62 @@ function renderType(type: TypeRef | null | undefined): string {
   return type.name ?? type.kind;
 }
 
+const short = (text: string | null | undefined): string =>
+  text ? `   # ${text.split('\n')[0]!.slice(0, 90)}` : '';
+
 const config = loadConfig();
 if (config.DRY_RUN) {
   console.error('Set DRY_RUN=false (inline is fine) and BUFFER_API_KEY.');
   process.exit(2);
 }
-
 const transport = createBufferTransport(config);
+const requested = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
 
-const schema = (await transport(DUMP_QUERY)).data as {
-  __schema: {
-    queryType: { fields: Array<{ name: string }> };
-    mutationType: {
-      fields: Array<{ name: string; args: Array<{ name: string; type: TypeRef }> }>;
+if (requested.length === 0) {
+  const schema = (await transport(ROOT_QUERY)).data as {
+    __schema: {
+      queryType: { fields: Array<{ name: string; args: Array<{ name: string; type: TypeRef }> }> };
+      mutationType: { fields: Array<{ name: string; args: Array<{ name: string; type: TypeRef }> }> };
     };
   };
-};
-
-console.log('\n=== QUERIES ===');
-console.log(schema.__schema.queryType.fields.map((f) => f.name).join(', '));
-
-console.log('\n=== MUTATIONS ===');
-for (const field of schema.__schema.mutationType.fields) {
-  const args = field.args.map((a) => `${a.name}: ${renderType(a.type)}`).join(', ');
-  console.log(`  ${field.name}(${args})`);
-}
-
-// Dump every input type referenced by post-related mutations.
-const postMutations = schema.__schema.mutationType.fields.filter((f) => /post/i.test(f.name));
-const inputTypeNames = new Set<string>();
-for (const mutation of postMutations) {
-  for (const arg of mutation.args) {
-    const name = renderType(arg.type).replace(/[![\]]/g, '');
-    if (name && name !== '?') inputTypeNames.add(name);
+  for (const [label, root] of [
+    ['QUERIES', schema.__schema.queryType],
+    ['MUTATIONS', schema.__schema.mutationType]
+  ] as const) {
+    console.log(`\n=== ${label} ===`);
+    for (const field of root.fields) {
+      const args = field.args.map((a) => `${a.name}: ${renderType(a.type)}`).join(', ');
+      console.log(`  ${field.name}(${args})`);
+    }
   }
-}
-
-for (const typeName of inputTypeNames) {
-  const result = (await transport(INPUT_TYPE_QUERY, { name: typeName })).data as {
-    __type: { name: string; kind: string; inputFields: Array<{ name: string; description: string | null; type: TypeRef }> | null } | null;
-  };
-  const type = result.__type;
-  if (!type?.inputFields) continue;
-  console.log(`\n=== ${type.name} ===`);
-  for (const field of type.inputFields) {
-    const description = field.description ? `   # ${field.description.split('\n')[0]}` : '';
-    console.log(`  ${field.name}: ${renderType(field.type)}${description}`);
+  console.log('\nRe-run with type names to expand, e.g. npm run dump:buffer -- ShareMode AssetInput\n');
+} else {
+  for (const name of requested) {
+    const result = (await transport(TYPE_QUERY, { name })).data as {
+      __type: {
+        name: string;
+        kind: string;
+        description: string | null;
+        inputFields: Array<{ name: string; description: string | null; type: TypeRef }> | null;
+        enumValues: Array<{ name: string; description: string | null }> | null;
+        fields: Array<{ name: string; type: TypeRef }> | null;
+      } | null;
+    };
+    const type = result.__type;
+    if (!type) {
+      console.log(`\n=== ${name} === (not found)`);
+      continue;
+    }
+    console.log(`\n=== ${type.name} (${type.kind}) ===${short(type.description)}`);
+    for (const field of type.inputFields ?? []) {
+      console.log(`  ${field.name}: ${renderType(field.type)}${short(field.description)}`);
+    }
+    for (const value of type.enumValues ?? []) {
+      console.log(`  ${value.name}${short(value.description)}`);
+    }
+    for (const field of type.fields ?? []) {
+      console.log(`  ${field.name}: ${renderType(field.type)}`);
+    }
   }
+  console.log('');
 }
-
-console.log('');
