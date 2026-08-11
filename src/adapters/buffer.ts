@@ -1,11 +1,13 @@
 import { requireProviderCredentials, redactSecrets, type AppConfig } from '../config.js';
 import { ProviderError, type BufferAsset, type BufferPostReceipt } from '../types.js';
 import {
-  buildCreatePostInput,
   CREATE_POST_MUTATION,
   LIST_POSTS_QUERY,
   REQUIRED_SCHEMA,
   SCHEMA_INTROSPECTION_QUERY,
+  SHARE_MODE_BY_WRITE_MODE,
+  buildCreatePostInput,
+  parsePostActionPayload,
   type BufferWriteMode
 } from './buffer-operations.js';
 
@@ -271,9 +273,9 @@ async function createPost(
   if (!report) notes.push('Schema check skipped (BUFFER_SKIP_SCHEMA_CHECK=true); optional fields were omitted.');
 
   const markAiAssisted =
-    config.BUFFER_MARK_AI_ASSISTED && supportedOptionalFields?.has('isAiAssisted') === true;
+    config.BUFFER_MARK_AI_ASSISTED && supportedOptionalFields?.has('aiAssisted') === true;
   if (config.BUFFER_MARK_AI_ASSISTED && !markAiAssisted) {
-    notes.push('isAiAssisted not confirmed by the live schema; flag omitted.');
+    notes.push('aiAssisted not confirmed by the live schema; flag omitted.');
   }
 
   const variables = {
@@ -284,7 +286,6 @@ async function createPost(
       assets: input.assets,
       firstComment: input.firstComment,
       tagIds: input.tagIds,
-      organizationId: config.BUFFER_ORGANIZATION_ID,
       dueAt: input.dueAt,
       markAiAssisted,
       ...(supportedOptionalFields ? { supportedOptionalFields } : {})
@@ -292,12 +293,16 @@ async function createPost(
   };
 
   const transport = deps.transport ?? createBufferTransport(config);
-  const post = unwrap<PostNode>(await transport(CREATE_POST_MUTATION, variables), 'createPost', config);
+  const payload = unwrap<unknown>(await transport(CREATE_POST_MUTATION, variables), 'createPost', config);
+  const post = parsePostActionPayload(payload);
+  if (post.shareMode && post.shareMode !== SHARE_MODE_BY_WRITE_MODE[mode]) {
+    notes.push(`Buffer recorded shareMode=${post.shareMode} (requested ${SHARE_MODE_BY_WRITE_MODE[mode]}).`);
+  }
   return {
     id: post.id,
     ...(post.status !== undefined ? { status: post.status } : {}),
     dueAt: post.dueAt ?? null,
-    text: input.text,
+    text: post.text ?? input.text,
     dryRun: false,
     ...(notes.length > 0 ? { notes } : {})
   };

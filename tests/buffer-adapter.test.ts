@@ -9,7 +9,12 @@ import {
   verifyBufferSchema,
   type BufferTransport
 } from '../src/adapters/buffer.js';
-import { buildCreatePostInput, serializeAssets } from '../src/adapters/buffer-operations.js';
+import {
+  SHARE_MODE_BY_WRITE_MODE,
+  buildCreatePostInput,
+  parsePostActionPayload,
+  serializeAssets
+} from '../src/adapters/buffer-operations.js';
 import { loadConfig } from '../src/config.js';
 import { ProviderError } from '../src/types.js';
 
@@ -21,6 +26,15 @@ beforeEach(() => _resetBufferSchemaCache());
 function transportReturning(data: Record<string, unknown>): { transport: BufferTransport; spy: ReturnType<typeof vi.fn> } {
   const spy = vi.fn().mockResolvedValue({ data });
   return { transport: spy as unknown as BufferTransport, spy };
+}
+
+/** createPost returns the PostActionPayload union — mirror that in mocks. */
+function createPostSuccess(post: Record<string, unknown>): Record<string, unknown> {
+  return { createPost: { __typename: 'PostActionSuccess', post } };
+}
+
+function createPostError(typename: string, message: string): Record<string, unknown> {
+  return { createPost: { __typename: typename, message } };
 }
 
 describe('approval gate', () => {
@@ -60,10 +74,18 @@ describe('approval gate', () => {
 describe('saveBufferDraft', () => {
   it('always sends saveToDraft=true and no publishing mode', async () => {
     const config = loadConfig(liveEnv);
-    const { transport, spy } = transportReturning({ createPost: { id: 'p1', status: 'draft', dueAt: null } });
+    const { transport, spy } = transportReturning(
+      createPostSuccess({ id: 'p1', status: 'draft', dueAt: null, text: 'draft me', shareMode: 'addToQueue' })
+    );
     const receipt = await saveBufferDraft(config, { text: 'draft me', channelId: 'ch1' }, { transport });
     const [, variables] = spy.mock.calls[0] as [string, { input: Record<string, unknown> }];
-    expect(variables.input).toMatchObject({ saveToDraft: true, addToQueue: false, customScheduled: false });
+    expect(variables.input).toMatchObject({
+      saveToDraft: true,
+      mode: 'addToQueue',
+      schedulingType: 'automatic',
+      needsApproval: false,
+      assets: []
+    });
     expect(variables.input).not.toHaveProperty('dueAt');
     expect(receipt).toMatchObject({ id: 'p1', status: 'draft', dryRun: false });
   });
@@ -81,22 +103,24 @@ describe('saveBufferDraft', () => {
 describe('queue and schedule modes', () => {
   it('queue sets addToQueue only; schedule sets customScheduled + dueAt', async () => {
     const config = loadConfig(liveEnv);
-    const q = transportReturning({ createPost: { id: 'q1', status: 'scheduled', dueAt: null } });
+    const q = transportReturning(createPostSuccess({ id: 'q1', status: 'scheduled', dueAt: null, shareMode: 'addToQueue' }));
     await queueBufferPost(config, { text: 'x', channelId: 'ch1', approved: true }, { transport: q.transport });
     expect((q.spy.mock.calls[0] as [string, { input: Record<string, unknown> }])[1].input).toMatchObject({
       saveToDraft: false,
-      addToQueue: true,
-      customScheduled: false
+      mode: 'addToQueue'
     });
 
-    const s = transportReturning({ createPost: { id: 's1', status: 'scheduled', dueAt: '2026-09-01T09:00:00Z' } });
+    const s = transportReturning(
+      createPostSuccess({ id: 's1', status: 'scheduled', dueAt: '2026-09-01T09:00:00Z', shareMode: 'customScheduled' })
+    );
     await scheduleBufferPost(
       config,
       { text: 'x', channelId: 'ch1', approved: true, dueAt: '2026-09-01T09:00:00Z' },
       { transport: s.transport }
     );
     expect((s.spy.mock.calls[0] as [string, { input: Record<string, unknown> }])[1].input).toMatchObject({
-      customScheduled: true,
+      mode: 'customScheduled',
+      saveToDraft: false,
       dueAt: '2026-09-01T09:00:00Z'
     });
   });
@@ -138,16 +162,22 @@ describe('asset serialization', () => {
     expect(() => serializeAssets([{ kind: 'image', url: 'http://insecure.example/a.png' }])).toThrow();
   });
 
-  it('buildCreatePostInput sets exactly one mode and honours field feature-detection', () => {
+  it('buildCreatePostInput nests firstComment under LinkedIn metadata and honours feature-detection', () => {
     const input = buildCreatePostInput({
       mode: 'draft',
       channelId: 'ch1',
       text: 'x',
       firstComment: 'first!',
       markAiAssisted: true,
-      supportedOptionalFields: new Set(['isAiAssisted']) // firstComment NOT supported
+      supportedOptionalFields: new Set(['aiAssisted', 'metadata'])
     });
-    expect(input).toMatchObject({ saveToDraft: true, addToQueue: false, customScheduled: false, isAiAssisted: true });
+    expect(input).toMatchObject({
+      saveToDraft: true,
+      mode: 'addToQueue',
+      aiAssisted: true,
+      metadata: { linkedin: { firstComment: 'first!' } }
+    });
+    // firstComment is never a top-level field on the real schema.
     expect(input).not.toHaveProperty('firstComment');
     expect(() => buildCreatePostInput({ mode: 'draft', channelId: 'c', text: 'x', dueAt: '2026-09-01T09:00:00Z' })).toThrow(
       /only valid for schedule/
@@ -210,12 +240,14 @@ describe('schema verification', () => {
                     inputFields: [
                       { name: 'channelId' },
                       { name: 'text' },
+                      { name: 'mode' },
+                      { name: 'schedulingType' },
+                      { name: 'needsApproval' },
                       { name: 'saveToDraft' },
-                      { name: 'addToQueue' },
-                      { name: 'customScheduled' },
-                      { name: 'dueAt' },
                       { name: 'assets' },
-                      { name: 'isAiAssisted' }
+                      { name: 'dueAt' },
+                      { name: 'aiAssisted' },
+                      { name: 'tagIds' }
                     ]
                   }
                 }
@@ -232,7 +264,7 @@ describe('schema verification', () => {
     const { transport } = transportReturning(introspection);
     const report = await verifyBufferSchema(config, { transport });
     expect(report.ok).toBe(true);
-    expect(report.supportedOptionalFields).toContain('isAiAssisted');
+    expect(report.supportedOptionalFields).toContain('aiAssisted');
     expect(report.missingInputFields).toHaveLength(0);
   });
 
@@ -251,24 +283,24 @@ describe('schema verification', () => {
     expect(spy).toHaveBeenCalledTimes(1); // introspection only — the write never went out
   });
 
-  it('feature-detects isAiAssisted: omitted when the live schema lacks it', async () => {
+  it('feature-detects aiAssisted: omitted when the live schema lacks it', async () => {
     const config = loadConfig({ ...env, DRY_RUN: 'false', BUFFER_API_KEY: 'k' });
     const noFlag = JSON.parse(JSON.stringify(introspection)) as typeof introspection;
     noFlag.__schema.mutationType.fields[0]!.args[0]!.type.ofType!.inputFields = introspection.__schema.mutationType.fields[0]!.args[0]!.type.ofType!.inputFields.filter(
-      (f) => f.name !== 'isAiAssisted'
+      (f) => f.name !== 'aiAssisted'
     );
     const spy = vi
       .fn()
       .mockResolvedValueOnce({ data: noFlag })
-      .mockResolvedValueOnce({ data: { createPost: { id: 'p9', status: 'draft', dueAt: null } } });
+      .mockResolvedValueOnce({ data: createPostSuccess({ id: 'p9', status: 'draft', dueAt: null }) });
     const receipt = await saveBufferDraft(
       config,
       { text: 'x', channelId: 'c' },
       { transport: spy as unknown as BufferTransport }
     );
     const [, variables] = spy.mock.calls[1] as [string, { input: Record<string, unknown> }];
-    expect(variables.input).not.toHaveProperty('isAiAssisted');
-    expect(receipt.notes?.join(' ')).toMatch(/isAiAssisted not confirmed/);
+    expect(variables.input).not.toHaveProperty('aiAssisted');
+    expect(receipt.notes?.join(' ')).toMatch(/aiAssisted not confirmed/);
   });
 
   it('listBufferPosts validates channel input and maps results', async () => {
@@ -279,5 +311,73 @@ describe('schema verification', () => {
     });
     const posts = await listBufferPosts(config, { channelIds: ['ch1'], limit: 5 }, { transport });
     expect(posts).toEqual([{ id: 'a', status: 'draft', dueAt: null, text: 'one' }]);
+  });
+});
+
+describe('immediate publishing is unreachable by construction', () => {
+  it('no write mode maps to shareNow or shareNext', () => {
+    const emitted = Object.values(SHARE_MODE_BY_WRITE_MODE);
+    expect(emitted).not.toContain('shareNow');
+    expect(emitted).not.toContain('shareNext');
+    expect(new Set(emitted)).toEqual(new Set(['addToQueue', 'customScheduled']));
+  });
+
+  it('every write path emits only a non-publishing ShareMode', async () => {
+    const config = loadConfig(liveEnv);
+    const seen: string[] = [];
+    const spy = vi.fn().mockImplementation((_query: string, variables: { input: { mode: string } }) => {
+      seen.push(variables.input.mode);
+      return Promise.resolve({ data: createPostSuccess({ id: 'x', status: 'draft', dueAt: null }) });
+    });
+    const transport = spy as unknown as BufferTransport;
+    const base = { text: 'x', channelId: 'ch1' };
+    await saveBufferDraft(config, base, { transport });
+    await queueBufferPost(config, { ...base, approved: true }, { transport });
+    await scheduleBufferPost(config, { ...base, approved: true, dueAt: '2026-09-01T09:00:00Z' }, { transport });
+    expect(seen).toEqual(['addToQueue', 'addToQueue', 'customScheduled']);
+  });
+});
+
+describe('PostActionPayload union parsing', () => {
+  it('returns the post on success', () => {
+    const parsed = parsePostActionPayload({
+      __typename: 'PostActionSuccess',
+      post: { id: 'p1', status: 'draft', shareMode: 'addToQueue' }
+    });
+    expect(parsed).toMatchObject({ id: 'p1', status: 'draft' });
+  });
+
+  it('throws a hinted ProviderError for each error branch', () => {
+    for (const [typename, pattern] of [
+      ['UnauthorizedError', /BUFFER_API_KEY/],
+      ['NotFoundError', /BUFFER_LINKEDIN_CHANNEL_ID/],
+      ['LimitReachedError', /limit/i],
+      ['InvalidInputError', /buffer-operations\.ts/]
+    ] as const) {
+      const error = (() => {
+        try {
+          parsePostActionPayload({ __typename: typename, message: 'nope' });
+          return null;
+        } catch (e) {
+          return e as ProviderError;
+        }
+      })();
+      expect(error).toBeInstanceOf(ProviderError);
+      expect(`${error!.message} ${error!.hint ?? ''}`).toMatch(pattern);
+      expect(error!.message).toContain(typename);
+    }
+  });
+
+  it('refuses a success payload with no post id rather than returning undefined', () => {
+    expect(() => parsePostActionPayload({ __typename: 'PostActionSuccess', post: {} })).toThrow(/no post id/);
+    expect(() => parsePostActionPayload(null)).toThrow(/empty createPost payload/);
+  });
+
+  it('surfaces a real error branch through saveBufferDraft', async () => {
+    const config = loadConfig(liveEnv);
+    const { transport } = transportReturning(createPostError('LimitReachedError', 'Daily limit reached'));
+    await expect(saveBufferDraft(config, { text: 'x', channelId: 'ch1' }, { transport })).rejects.toThrow(
+      /LimitReachedError.*Daily limit reached/
+    );
   });
 });
