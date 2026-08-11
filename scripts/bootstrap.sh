@@ -7,4 +7,5 @@ if [[ ! -f .env ]]; then
 fi
 
 npm install
+npm run build
 printf '\nNext: open Claude Code in this repository and use docs/CLAUDE_HANDOFF_PROMPT.md\n'
