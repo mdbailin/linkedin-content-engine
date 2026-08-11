@@ -65,3 +65,41 @@ describe('redactSecrets', () => {
     expect(clean).toContain('[redacted]');
   });
 });
+
+describe('blank env vars behave as unset', () => {
+  it('loads an untouched .env.example-style environment with DRY_RUN=false', () => {
+    // Exactly what dotenv produces from the shipped template plus one real key.
+    const config = loadConfig({
+      PATH: '/usr/bin',
+      OPENAI_API_KEY: '',
+      OPENAI_IMAGE_MODEL: 'gpt-image-2',
+      CLOUDINARY_URL: '',
+      CLOUDINARY_BASE_FOLDER: '',
+      BUFFER_API_KEY: 'buf-real-key',
+      BUFFER_GRAPHQL_ENDPOINT: '',
+      BUFFER_LINKEDIN_CHANNEL_ID: '',
+      BUFFER_ORGANIZATION_ID: '',
+      BRAND_PROFILE_PATH: '',
+      OUTPUT_DIR: '',
+      DRY_RUN: 'false',
+      LOG_LEVEL: ''
+    } as NodeJS.ProcessEnv);
+
+    expect(config.BUFFER_API_KEY).toBe('buf-real-key');
+    expect(config.OPENAI_API_KEY).toBeUndefined();
+    expect(config.CLOUDINARY_URL).toBeUndefined();
+    // Blanks must fall through to defaults, not empty strings.
+    expect(config.BUFFER_GRAPHQL_ENDPOINT).toBe('https://api.buffer.com');
+    expect(config.CLOUDINARY_BASE_FOLDER).toBe('linkedin-content-engine');
+    expect(config.OUTPUT_DIR).toBe('.generated');
+    expect(config.LOG_LEVEL).toBe('info');
+    expect(config.DRY_RUN).toBe(false);
+  });
+
+  it('still enforces credentials per provider at point of use', () => {
+    const config = loadConfig({ PATH: '/usr/bin', BUFFER_API_KEY: 'k', DRY_RUN: 'false' } as NodeJS.ProcessEnv);
+    expect(() => requireProviderCredentials(config, 'buffer')).not.toThrow();
+    expect(() => requireProviderCredentials(config, 'openai')).toThrow(/OPENAI_API_KEY/);
+    expect(() => requireProviderCredentials(config, 'cloudinary')).toThrow(/CLOUDINARY_URL/);
+  });
+});
