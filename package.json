@@ -1,0 +1,30 @@
+{
+  "name": "linkedin-content-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code skill + MCP server scaffold for LinkedIn content, GPT Image 2, Cloudinary, and Buffer.",
+  "scripts": {
+    "mcp": "tsx src/mcp/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "cloudinary": "latest",
+    "dotenv": "latest",
+    "openai": "latest",
+    "pdf-lib": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  },
+  "comments": {
+    "mcp": "Claude must add the current stable official MCP TypeScript server package during Phase 4 after checking the official docs. Do not guess a frozen package/version here."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "brandName": "Example Education Brand",
+  "audience": ["teachers", "school leaders"],
+  "voice": ["clear", "practical", "confident", "teacher-first"],
+  "avoid": ["generic AI hype", "excessive emoji", "unverifiable claims"],
+  "colors": ["dark blue", "warm yellow", "white"],
+  "fonts": ["Poppins"],
+  "referenceAssetUrls": [],
+  "defaultCta": "See the full resource collection.",
+  "defaultHashtags": ["#IBMaths", "#MathTeachers"]
+}
