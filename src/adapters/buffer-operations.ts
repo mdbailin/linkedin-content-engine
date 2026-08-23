@@ -53,13 +53,59 @@ export const CREATE_POST_MUTATION = /* GraphQL */ `
   }
 `;
 
-export const LIST_POSTS_QUERY = /* GraphQL */ `
-  query LceListPosts($channelIds: [ID!]!, $status: String, $limit: Int) {
-    posts(channelIds: $channelIds, status: $status, limit: $limit) {
+export const LIST_CHANNELS_QUERY = /* GraphQL */ `
+  query LceListChannels($input: ChannelsInput!) {
+    channels(input: $input) {
       id
-      status
-      dueAt
-      text
+      name
+      displayName
+      service
+      type
+      organizationId
+      isDisconnected
+      isLocked
+      timezone
+    }
+  }
+`;
+
+export const ACCOUNT_QUERY = /* GraphQL */ `
+  query LceAccount {
+    account {
+      id
+      organizations {
+        id
+        name
+      }
+    }
+  }
+`;
+
+/**
+ * `posts(input: PostsInput!, first: Int, after: String): PostsResults!`
+ *
+ * PostsResults' exact shape is unconfirmed, so this selects the common
+ * connection shape and the parser tolerates either edges/node or a plain items
+ * list — see parsePostsResults.
+ */
+export const LIST_POSTS_QUERY = /* GraphQL */ `
+  query LceListPosts($input: PostsInput!, $first: Int, $after: String) {
+    posts(input: $input, first: $first, after: $after) {
+      edges {
+        node {
+          id
+          status
+          dueAt
+          text
+          shareMode
+          isCustomScheduled
+          createdAt
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
   }
 `;
@@ -258,4 +304,49 @@ export function parsePostActionPayload(payload: unknown): ParsedPost {
     `Buffer rejected the write (${kind}): ${result.message ?? 'no message'}`,
     hints[kind] ? { hint: hints[kind]! } : {}
   );
+}
+
+// ---------------------------------------------------------------------------
+// Read-path parsing
+// ---------------------------------------------------------------------------
+
+export interface ListedPost {
+  id: string;
+  status?: string;
+  dueAt?: string | null;
+  text?: string;
+  shareMode?: string;
+}
+
+/**
+ * PostsResults was not introspected at implementation time, so accept either a
+ * Relay-style connection (`edges[].node`) or a plain list, rather than
+ * hard-failing on a shape we did not verify.
+ */
+export function parsePostsResults(payload: unknown): ListedPost[] {
+  if (Array.isArray(payload)) return payload as ListedPost[];
+  const result = payload as { edges?: Array<{ node?: ListedPost }>; items?: ListedPost[]; nodes?: ListedPost[] } | null;
+  if (!result || typeof result !== 'object') return [];
+  if (Array.isArray(result.edges)) {
+    return result.edges.map((edge) => edge?.node).filter((node): node is ListedPost => Boolean(node?.id));
+  }
+  if (Array.isArray(result.items)) return result.items;
+  if (Array.isArray(result.nodes)) return result.nodes;
+  return [];
+}
+
+/** Build the PostsInput filter object; every field is optional but organizationId. */
+export function buildPostsInput(input: {
+  organizationId: string;
+  channelIds?: string[] | undefined;
+  status?: string[] | undefined;
+}): Record<string, unknown> {
+  const filter: Record<string, unknown> = {};
+  if (input.channelIds && input.channelIds.length > 0) filter.channelIds = input.channelIds;
+  if (input.status && input.status.length > 0) filter.status = input.status;
+  return {
+    organizationId: input.organizationId,
+    ...(Object.keys(filter).length > 0 ? { filter } : {}),
+    sort: [{ field: 'createdAt', direction: 'desc' }]
+  };
 }

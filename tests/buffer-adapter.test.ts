@@ -12,7 +12,9 @@ import {
 import {
   SHARE_MODE_BY_WRITE_MODE,
   buildCreatePostInput,
+  buildPostsInput,
   parsePostActionPayload,
+  parsePostsResults,
   serializeAssets
 } from '../src/adapters/buffer-operations.js';
 import { loadConfig } from '../src/config.js';
@@ -303,14 +305,9 @@ describe('schema verification', () => {
     expect(receipt.notes?.join(' ')).toMatch(/aiAssisted not confirmed/);
   });
 
-  it('listBufferPosts validates channel input and maps results', async () => {
+  it('listBufferPosts requires at least one channel', async () => {
     const config = loadConfig(liveEnv);
     await expect(listBufferPosts(config, { channelIds: [] })).rejects.toThrow(/channelId/);
-    const { transport } = transportReturning({
-      posts: [{ id: 'a', status: 'draft', dueAt: null, text: 'one' }]
-    });
-    const posts = await listBufferPosts(config, { channelIds: ['ch1'], limit: 5 }, { transport });
-    expect(posts).toEqual([{ id: 'a', status: 'draft', dueAt: null, text: 'one' }]);
   });
 });
 
@@ -379,5 +376,48 @@ describe('PostActionPayload union parsing', () => {
     await expect(saveBufferDraft(config, { text: 'x', channelId: 'ch1' }, { transport })).rejects.toThrow(
       /LimitReachedError.*Daily limit reached/
     );
+  });
+});
+
+describe('posts read path', () => {
+  it('requires an organization ID and says how to find one', async () => {
+    const config = loadConfig(liveEnv);
+    const { transport, spy } = transportReturning({});
+    const error = await listBufferPosts(config, { channelIds: ['ch1'] }, { transport }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).hint).toMatch(/npm run channels/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('builds PostsInput with organizationId, filters, and sort', () => {
+    expect(buildPostsInput({ organizationId: 'org1', channelIds: ['ch1'], status: ['draft'] })).toEqual({
+      organizationId: 'org1',
+      filter: { channelIds: ['ch1'], status: ['draft'] },
+      sort: [{ field: 'createdAt', direction: 'desc' }]
+    });
+    // Empty filters are omitted rather than sent as empty arrays.
+    expect(buildPostsInput({ organizationId: 'org1' })).not.toHaveProperty('filter');
+  });
+
+  it('parses either a connection or a plain list from PostsResults', () => {
+    const expected = [{ id: 'a', status: 'draft' }];
+    expect(parsePostsResults({ edges: [{ node: expected[0] }] })).toEqual(expected);
+    expect(parsePostsResults({ items: expected })).toEqual(expected);
+    expect(parsePostsResults({ nodes: expected })).toEqual(expected);
+    expect(parsePostsResults(expected)).toEqual(expected);
+    expect(parsePostsResults(null)).toEqual([]);
+    expect(parsePostsResults({ unexpected: true })).toEqual([]);
+  });
+
+  it('sends the org-scoped query and maps results', async () => {
+    const config = loadConfig({ ...liveEnv, BUFFER_ORGANIZATION_ID: 'org-1' });
+    const { transport, spy } = transportReturning({
+      posts: { edges: [{ node: { id: 'p1', status: 'draft', dueAt: null, text: 'hi' } }] }
+    });
+    const posts = await listBufferPosts(config, { channelIds: ['ch1'], status: 'draft', limit: 5 }, { transport });
+    const [, variables] = spy.mock.calls[0] as [string, { input: Record<string, unknown>; first: number }];
+    expect(variables.input).toMatchObject({ organizationId: 'org-1', filter: { channelIds: ['ch1'], status: ['draft'] } });
+    expect(variables.first).toBe(5);
+    expect(posts).toEqual([{ id: 'p1', status: 'draft', dueAt: null, text: 'hi' }]);
   });
 });

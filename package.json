@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "build": "tsc -p tsconfig.build.json",
     "verify:buffer": "tsx scripts/verify-buffer-schema.ts",
-    "dump:buffer": "tsx scripts/dump-buffer-schema.ts"
+    "dump:buffer": "tsx scripts/dump-buffer-schema.ts",
+    "channels": "tsx scripts/list-channels.ts",
+    "first-draft": "tsx scripts/first-draft.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

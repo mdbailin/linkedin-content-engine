@@ -1,13 +1,17 @@
 import { requireProviderCredentials, redactSecrets, type AppConfig } from '../config.js';
 import { ProviderError, type BufferAsset, type BufferPostReceipt } from '../types.js';
 import {
+  ACCOUNT_QUERY,
   CREATE_POST_MUTATION,
+  LIST_CHANNELS_QUERY,
   LIST_POSTS_QUERY,
   REQUIRED_SCHEMA,
   SCHEMA_INTROSPECTION_QUERY,
   SHARE_MODE_BY_WRITE_MODE,
   buildCreatePostInput,
+  buildPostsInput,
   parsePostActionPayload,
+  parsePostsResults,
   type BufferWriteMode
 } from './buffer-operations.js';
 
@@ -40,6 +44,8 @@ export interface ListBufferPostsInput {
   channelIds: string[];
   status?: string;
   limit?: number;
+  /** Defaults to BUFFER_ORGANIZATION_ID; Buffer's posts query requires one. */
+  organizationId?: string;
 }
 
 interface GraphQLResponse {
@@ -354,20 +360,71 @@ export async function listBufferPosts(
   }
   if (config.DRY_RUN) return [];
   requireProviderCredentials(config, 'buffer');
+
+  const organizationId = input.organizationId ?? config.BUFFER_ORGANIZATION_ID;
+  if (!organizationId) {
+    throw new ProviderError('buffer', "Buffer's posts query requires an organization ID.", {
+      hint: 'Set BUFFER_ORGANIZATION_ID in .env — run `npm run channels` to look it up.'
+    });
+  }
+
   const transport = deps.transport ?? createBufferTransport(config);
-  const posts = unwrap<PostNode[]>(
+  const payload = unwrap<unknown>(
     await transport(LIST_POSTS_QUERY, {
-      channelIds: input.channelIds,
-      status: input.status ?? null,
-      limit: Math.min(Math.max(input.limit ?? 20, 1), 100)
+      input: buildPostsInput({
+        organizationId,
+        channelIds: input.channelIds,
+        ...(input.status ? { status: [input.status] } : {})
+      }),
+      first: Math.min(Math.max(input.limit ?? 20, 1), 100)
     }),
     'posts',
     config
   );
-  return posts.map((post) => ({
+
+  return parsePostsResults(payload).map((post) => ({
     id: post.id,
     ...(post.status !== undefined ? { status: post.status } : {}),
     dueAt: post.dueAt ?? null,
     ...(post.text !== undefined ? { text: post.text } : {})
   }));
+}
+
+export interface BufferChannel {
+  id: string;
+  name: string;
+  displayName?: string | null;
+  service: string;
+  type?: string;
+  organizationId: string;
+  isDisconnected?: boolean;
+  isLocked?: boolean;
+  timezone?: string;
+}
+
+/** Read-only: list connected channels for an organization. */
+export async function listBufferChannels(
+  config: AppConfig,
+  organizationId: string,
+  deps: BufferDeps = {}
+): Promise<BufferChannel[]> {
+  requireProviderCredentials(config, 'buffer');
+  const transport = deps.transport ?? createBufferTransport(config);
+  return unwrap<BufferChannel[]>(
+    await transport(LIST_CHANNELS_QUERY, { input: { organizationId } }),
+    'channels',
+    config
+  );
+}
+
+export interface BufferAccount {
+  id: string;
+  organizations: Array<{ id: string; name: string }>;
+}
+
+/** Read-only: the authenticated account and its organizations. */
+export async function getBufferAccount(config: AppConfig, deps: BufferDeps = {}): Promise<BufferAccount> {
+  requireProviderCredentials(config, 'buffer');
+  const transport = deps.transport ?? createBufferTransport(config);
+  return unwrap<BufferAccount>(await transport(ACCOUNT_QUERY), 'account', config);
 }
