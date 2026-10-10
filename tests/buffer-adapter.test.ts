@@ -160,6 +160,22 @@ describe('asset serialization', () => {
     });
   });
 
+  it('image alt text goes under metadata; an explicit thumbnailUrl passes through', () => {
+    const gif = 'https://res.cloudinary.com/demo/image/upload/v17/wf/single/demo.gif';
+    const [withAlt, withThumb] = serializeAssets([
+      { kind: 'image', url: gif, altText: 'Calculator demo' },
+      { kind: 'image', url: gif, thumbnailUrl: 'https://res.cloudinary.com/demo/thumb.jpg' }
+    ]);
+    expect(withAlt).toEqual({ image: { url: gif, metadata: { altText: 'Calculator demo' } } });
+    expect(withThumb).toEqual({ image: { url: gif, thumbnailUrl: 'https://res.cloudinary.com/demo/thumb.jpg' } });
+  });
+
+  it('refuses non-https image thumbnails', () => {
+    expect(() =>
+      serializeAssets([{ kind: 'image', url: 'https://a.example/x.gif', thumbnailUrl: 'http://a.example/t.jpg' }])
+    ).toThrow();
+  });
+
   it('refuses non-https asset URLs', () => {
     expect(() => serializeAssets([{ kind: 'image', url: 'http://insecure.example/a.png' }])).toThrow();
   });

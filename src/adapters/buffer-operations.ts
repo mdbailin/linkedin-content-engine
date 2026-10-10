@@ -186,7 +186,7 @@ export const SHARE_MODE_BY_WRITE_MODE = {
 } as const satisfies Record<BufferWriteMode, 'addToQueue' | 'customScheduled'>;
 
 export interface SerializedAsset {
-  image?: { url: string };
+  image?: { url: string; thumbnailUrl?: string; metadata?: { altText: string } };
   document?: { url: string; thumbnailUrl: string; title: string };
 }
 
@@ -196,7 +196,15 @@ export function serializeAssets(assets: BufferAsset[] | undefined): SerializedAs
   return assets.map((asset) => {
     const parsed = BufferAssetSchema.parse(asset); // re-enforces https-only URLs
     if (parsed.kind === 'image') {
-      return { image: { url: parsed.url } };
+      // Alt text lives under image metadata. Note: for animated GIFs Buffer
+      // ignores thumbnailUrl and stores the GIF itself as the thumbnail (seen Oct 2026).
+      return {
+        image: {
+          url: parsed.url,
+          ...(parsed.thumbnailUrl ? { thumbnailUrl: parsed.thumbnailUrl } : {}),
+          ...(parsed.altText ? { metadata: { altText: parsed.altText } } : {})
+        }
+      };
     }
     return {
       document: { url: parsed.url, thumbnailUrl: parsed.thumbnailUrl, title: parsed.title }

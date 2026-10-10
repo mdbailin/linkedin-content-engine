@@ -47,7 +47,7 @@ generated or saved for real.
 7. Carousel: `build_carousel_pdf` with the slide paths in exact display order.
 8. `upload_asset` for every file Buffer needs: slides/heroes as `image`, the PDF as `document`, the thumbnail as `image`.
 9. Buffer write:
-   - Default: `save_buffer_draft` with the text and assets — images as `{kind:"image",url}`, a carousel as ONE `{kind:"document", url: <pdf secureUrl>, thumbnailUrl: <thumbnail secureUrl>, title}`.
+   - Default: `save_buffer_draft` with the text and assets — images as `{kind:"image",url,altText}` (always write alt text), a carousel as ONE `{kind:"document", url: <pdf secureUrl>, thumbnailUrl: <thumbnail secureUrl>, title}`.
    - Only with explicit publishing approval: `queue_buffer_post` or `schedule_buffer_post` with `approved: true`.
 10. Finish with a compact receipt per post:
     `workflowId · Buffer id/status · asset URLs · scheduled time (if any) · dryRun flag`.

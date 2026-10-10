@@ -85,7 +85,7 @@ const postInputShape = {
     .array(BufferAssetSchema)
     .max(20)
     .optional()
-    .describe('Hosted https assets: images ({kind:"image",url}) or one carousel document ({kind:"document",url,thumbnailUrl,title}).'),
+    .describe('Hosted https assets: images ({kind:"image",url,altText?,thumbnailUrl?}) or one carousel document ({kind:"document",url,thumbnailUrl,title}).'),
   firstComment: z.string().max(2000).optional().describe('Optional first comment to attach.'),
   tagIds: z.array(z.string()).max(20).optional().describe('Optional Buffer tag IDs.')
 };

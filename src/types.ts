@@ -66,7 +66,9 @@ export const HttpsUrl = z
 
 export const BufferAssetImageSchema = z.object({
   kind: z.literal('image'),
-  url: HttpsUrl
+  url: HttpsUrl,
+  thumbnailUrl: HttpsUrl.optional(),
+  altText: z.string().min(1).max(1000).optional()
 });
 export type BufferAssetImage = z.infer<typeof BufferAssetImageSchema>;
 
