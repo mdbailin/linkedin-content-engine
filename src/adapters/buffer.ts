@@ -12,7 +12,8 @@ import {
   buildPostsInput,
   parsePostActionPayload,
   parsePostsResults,
-  type BufferWriteMode
+  type BufferWriteMode,
+  type FacebookPostType
 } from './buffer-operations.js';
 
 /**
@@ -33,6 +34,8 @@ export interface BufferPostInput {
   assets?: BufferAsset[];
   firstComment?: string;
   tagIds?: string[];
+  /** Required by Buffer for Facebook channels; ignored otherwise. */
+  facebookPostType?: FacebookPostType;
 }
 
 export interface ScheduleBufferPostInput extends BufferPostInput {
@@ -292,6 +295,7 @@ async function createPost(
       assets: input.assets,
       firstComment: input.firstComment,
       tagIds: input.tagIds,
+      facebookPostType: input.facebookPostType,
       dueAt: input.dueAt,
       markAiAssisted,
       ...(supportedOptionalFields ? { supportedOptionalFields } : {})

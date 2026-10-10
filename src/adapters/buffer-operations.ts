@@ -174,6 +174,10 @@ import { BufferAssetSchema, ProviderError, type BufferAsset } from '../types.js'
 
 export type BufferWriteMode = 'draft' | 'queue' | 'schedule';
 
+/** Buffer's PostTypeFacebook enum. */
+export const FACEBOOK_POST_TYPES = ['post', 'story', 'reel'] as const;
+export type FacebookPostType = (typeof FACEBOOK_POST_TYPES)[number];
+
 /**
  * Buffer's ShareMode enum. `shareNext` and `shareNow` publish immediately and
  * are deliberately NOT in this map: no code path in this project can produce
@@ -219,6 +223,7 @@ export interface CreatePostVariablesInput {
   assets?: BufferAsset[] | undefined;
   firstComment?: string | undefined;
   tagIds?: string[] | undefined;
+  facebookPostType?: FacebookPostType | undefined;
   dueAt?: string | undefined;
   /** Only included when the live schema confirmed support. */
   markAiAssisted?: boolean;
@@ -250,10 +255,15 @@ export function buildCreatePostInput(input: CreatePostVariablesInput): Record<st
     return { [field]: value };
   };
 
-  // First comments live under LinkedIn-specific metadata, not at the top level.
+  // Per-network settings live under metadata.<network>: LinkedIn first comments,
+  // and the post type Buffer requires for Facebook channels.
+  const networkMetadata = {
+    ...(input.firstComment ? { linkedin: { firstComment: input.firstComment } } : {}),
+    ...(input.facebookPostType ? { facebook: { type: input.facebookPostType } } : {})
+  };
   const metadata =
-    input.firstComment && (!supported || supported.has('metadata'))
-      ? { metadata: { linkedin: { firstComment: input.firstComment } } }
+    Object.keys(networkMetadata).length > 0 && (!supported || supported.has('metadata'))
+      ? { metadata: networkMetadata }
       : {};
 
   return {

@@ -14,6 +14,7 @@ import {
 } from '../adapters/buffer.js';
 import { generateCreative, type OpenAiDeps } from '../adapters/openai-image.js';
 import { uploadAsset, type CloudinaryDeps } from '../adapters/cloudinary.js';
+import { FACEBOOK_POST_TYPES } from '../adapters/buffer-operations.js';
 import { buildCarouselPdf } from '../services/carousel.js';
 import { readBrandProfile } from '../services/brand-profile.js';
 import { newWorkflowId, planAssetLayout } from '../services/orchestrator.js';
@@ -87,7 +88,11 @@ const postInputShape = {
     .optional()
     .describe('Hosted https assets: images ({kind:"image",url,altText?,thumbnailUrl?}) or one carousel document ({kind:"document",url,thumbnailUrl,title}).'),
   firstComment: z.string().max(2000).optional().describe('Optional first comment to attach.'),
-  tagIds: z.array(z.string()).max(20).optional().describe('Optional Buffer tag IDs.')
+  tagIds: z.array(z.string()).max(20).optional().describe('Optional Buffer tag IDs.'),
+  facebookPostType: z
+    .enum(FACEBOOK_POST_TYPES)
+    .optional()
+    .describe('Required when channelId is a Facebook channel (usually "post"); omit for LinkedIn.')
 };
 
 export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServer {
@@ -235,7 +240,7 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
       outputSchema: receiptOutput,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
     },
-    async ({ text, channelId, assets, firstComment, tagIds }) => {
+    async ({ text, channelId, assets, firstComment, tagIds, facebookPostType }) => {
       try {
         const receipt = await saveBufferDraft(
           config,
@@ -244,7 +249,8 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
             channelId: resolveChannelId(config, channelId),
             ...(assets ? { assets } : {}),
             ...(firstComment ? { firstComment } : {}),
-            ...(tagIds ? { tagIds } : {})
+            ...(tagIds ? { tagIds } : {}),
+            ...(facebookPostType ? { facebookPostType } : {})
           },
           deps.buffer ?? {}
         );
@@ -270,7 +276,7 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
       outputSchema: receiptOutput,
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true }
     },
-    async ({ text, channelId, assets, firstComment, tagIds, approved }) => {
+    async ({ text, channelId, assets, firstComment, tagIds, facebookPostType, approved }) => {
       try {
         if (approved !== true) {
           throw new ProviderError(
@@ -286,7 +292,8 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
             approved,
             ...(assets ? { assets } : {}),
             ...(firstComment ? { firstComment } : {}),
-            ...(tagIds ? { tagIds } : {})
+            ...(tagIds ? { tagIds } : {}),
+            ...(facebookPostType ? { facebookPostType } : {})
           },
           deps.buffer ?? {}
         );
@@ -313,7 +320,7 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
       outputSchema: receiptOutput,
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true }
     },
-    async ({ text, channelId, assets, firstComment, tagIds, dueAt, approved }) => {
+    async ({ text, channelId, assets, firstComment, tagIds, facebookPostType, dueAt, approved }) => {
       try {
         if (approved !== true) {
           throw new ProviderError(
@@ -330,7 +337,8 @@ export function createServer(config: AppConfig, deps: ServerDeps = {}): McpServe
             dueAt,
             ...(assets ? { assets } : {}),
             ...(firstComment ? { firstComment } : {}),
-            ...(tagIds ? { tagIds } : {})
+            ...(tagIds ? { tagIds } : {}),
+            ...(facebookPostType ? { facebookPostType } : {})
           },
           deps.buffer ?? {}
         );

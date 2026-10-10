@@ -26,7 +26,7 @@ Buffer" or "save it" means **draft**.
 - `generate_creative` — GPT Image 2 → PNG files on disk (paths only). Default slide size 1200x1504 (portrait 4:5-ish); heroes 1536x800 or 1536x1024. Pass brand `referenceAssetUrls` when the profile provides them.
 - `build_carousel_pdf` — ordered slide paths → PDF + thumbnail (slide 1). Local only.
 - `upload_asset` — local file → Cloudinary https URL. Folder `<workflowId>/slides|carousel|single`; tag with the workflowId.
-- `save_buffer_draft` — the DEFAULT Buffer write. Never publishes.
+- `save_buffer_draft` — the DEFAULT Buffer write. Never publishes. For a Facebook channel pass `facebookPostType: "post"` (Buffer requires it); Facebook has no PDF carousels, so send carousel pages as images.
 - `queue_buffer_post` / `schedule_buffer_post` — publishing actions; require `approved: true` (schedule also needs ISO `dueAt`).
 - `list_buffer_posts` — read-only inventory.
 - `verify_buffer_schema` — read-only introspection; run once before the first live Buffer write of a session if credentials are configured.

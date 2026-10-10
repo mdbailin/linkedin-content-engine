@@ -180,6 +180,23 @@ describe('asset serialization', () => {
     expect(() => serializeAssets([{ kind: 'image', url: 'http://insecure.example/a.png' }])).toThrow();
   });
 
+  it('buildCreatePostInput sends the Facebook post type under metadata.facebook, alongside LinkedIn metadata', () => {
+    const fbOnly = buildCreatePostInput({ mode: 'draft', channelId: 'fb1', text: 'hi', facebookPostType: 'post' });
+    expect(fbOnly.metadata).toEqual({ facebook: { type: 'post' } });
+
+    const both = buildCreatePostInput({
+      mode: 'draft',
+      channelId: 'ch1',
+      text: 'hi',
+      firstComment: 'first!',
+      facebookPostType: 'post'
+    });
+    expect(both.metadata).toEqual({ linkedin: { firstComment: 'first!' }, facebook: { type: 'post' } });
+
+    // LinkedIn-only posts keep sending no metadata at all.
+    expect(buildCreatePostInput({ mode: 'draft', channelId: 'ch1', text: 'hi' })).not.toHaveProperty('metadata');
+  });
+
   it('buildCreatePostInput nests firstComment under LinkedIn metadata and honours feature-detection', () => {
     const input = buildCreatePostInput({
       mode: 'draft',
